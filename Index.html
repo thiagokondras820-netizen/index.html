@@ -1,0 +1,240 @@
+# index.html
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no">
+<title>Mini Free Fire 3D</title>
+
+<style>
+body{margin:0;overflow:hidden;background:black;font-family:sans-serif}
+canvas{display:block}
+
+#hud{
+ position:absolute;top:15px;left:15px;
+ color:white;font-size:18px;
+ background:rgba(0,0,0,.4);
+ padding:8px;border-radius:8px
+}
+
+#ui{position:absolute;inset:0;pointer-events:none}
+
+.joy{
+ position:absolute;bottom:40px;left:30px;
+ width:120px;height:120px;
+ background:rgba(255,255,255,.2);
+ border-radius:50%;pointer-events:auto
+}
+#stick{
+ position:absolute;top:35px;left:35px;
+ width:50px;height:50px;
+ background:white;border-radius:50%
+}
+
+.btn{
+ position:absolute;right:30px;
+ width:70px;height:70px;
+ background:rgba(255,0,0,.6);
+ border-radius:50%;
+ border:3px solid white;
+ pointer-events:auto;
+ color:white;font-weight:bold;
+ display:flex;align-items:center;justify-content:center
+}
+#jump{bottom:160px}
+#shoot{bottom:70px}
+#run{bottom:250px;background:rgba(0,0,255,.6)}
+</style>
+</head>
+
+<body>
+
+<div id="hud">❤️ 100</div>
+
+<div id="ui">
+ <div class="joy" id="joy"><div id="stick"></div></div>
+ <div class="btn" id="jump">⬆</div>
+ <div class="btn" id="shoot">🔫</div>
+ <div class="btn" id="run">🏃</div>
+</div>
+
+<script type="module">
+import * as THREE from "https://cdn.skypack.dev/three@0.136.0";
+
+let scene,camera,renderer;
+let player,velocityY=0,onGround=true;
+let bullets=[],bots=[],houses=[];
+let move={x:0,z:0},running=false;
+let health=100;
+
+scene=new THREE.Scene();
+scene.background=new THREE.Color(0x87CEEB);
+
+camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,.1,1000);
+
+renderer=new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight);
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,.9));
+
+const floor=new THREE.Mesh(
+ new THREE.PlaneGeometry(200,200),
+ new THREE.MeshStandardMaterial({color:0x228B22})
+);
+floor.rotation.x=-Math.PI/2;
+scene.add(floor);
+
+//// PLAYER 3D
+const skin=new THREE.TextureLoader().load("skin2.jpg");
+player=new THREE.Group();
+
+const body=new THREE.Mesh(
+ new THREE.CylinderGeometry(.5,.6,1.5,12),
+ new THREE.MeshStandardMaterial({map:skin})
+);
+body.position.y=1;
+
+const head=new THREE.Mesh(
+ new THREE.SphereGeometry(.4,12,12),
+ new THREE.MeshStandardMaterial({map:skin})
+);
+head.position.y=2;
+
+player.add(body,head);
+scene.add(player);
+
+//// CASA
+function createHouse(x,z){
+ const house=new THREE.Mesh(
+  new THREE.BoxGeometry(4,4,4),
+  new THREE.MeshStandardMaterial({color:0x8B4513})
+ );
+ house.position.set(x,2,z);
+ houses.push(house);
+ scene.add(house);
+}
+createHouse(10,10);
+createHouse(-15,5);
+
+//// ROBÔS
+function spawnBot(x,z){
+ const bot=new THREE.Group();
+ const b=new THREE.Mesh(
+  new THREE.CylinderGeometry(.4,.5,1.4,10),
+  new THREE.MeshStandardMaterial({color:0xff0000})
+ );
+ const h=new THREE.Mesh(
+  new THREE.SphereGeometry(.35),
+  new THREE.MeshStandardMaterial({color:0xffaaaa})
+ );
+ b.position.y=1;
+ h.position.y=2;
+ bot.add(b,h);
+ bot.position.set(x,0,z);
+ bot.userData.life=30;
+ bots.push(bot);
+ scene.add(bot);
+}
+spawnBot(12,12);
+spawnBot(-12,-8);
+
+//// TIRO
+function shoot(){
+ const b=new THREE.Mesh(
+  new THREE.SphereGeometry(.15),
+  new THREE.MeshStandardMaterial({color:0xffff00})
+ );
+ b.position.copy(player.position);
+ const dir=new THREE.Vector3(0,0,-1).applyQuaternion(player.quaternion);
+ b.userData.vel=dir.multiplyScalar(.6);
+ bullets.push(b);
+ scene.add(b);
+}
+
+//// CONTROLES
+const joy=document.getElementById("joy");
+const stick=document.getElementById("stick");
+
+joy.addEventListener("touchmove",e=>{
+ const t=e.touches[0];
+ const r=joy.getBoundingClientRect();
+ const dx=t.clientX-(r.left+r.width/2);
+ const dy=t.clientY-(r.top+r.height/2);
+ const d=Math.min(40,Math.hypot(dx,dy));
+ const a=Math.atan2(dy,dx);
+ stick.style.transform=`translate(${Math.cos(a)*d}px,${Math.sin(a)*d}px)`;
+ move.x=Math.cos(a)*(d/40);
+ move.z=Math.sin(a)*(d/40);
+});
+
+joy.addEventListener("touchend",()=>{
+ stick.style.transform="translate(0,0)";
+ move={x:0,z:0};
+});
+
+document.getElementById("jump").onclick=()=>{
+ if(onGround){velocityY=.25;onGround=false;}
+};
+document.getElementById("shoot").onclick=shoot;
+document.getElementById("run").onclick=()=>running=!running;
+
+//// LOOP
+function animate(){
+ requestAnimationFrame(animate);
+
+ player.position.x+=move.x*(running?.25:.15);
+ player.position.z+=move.z*(running?.25:.15);
+
+ if(move.x||move.z)
+  player.rotation.y=-Math.atan2(move.z,move.x)-Math.PI/2;
+
+ velocityY-=.01;
+ player.position.y+=velocityY;
+ if(player.position.y<=0){
+  player.position.y=0;
+  velocityY=0;
+  onGround=true;
+ }
+
+ bullets.forEach((b,i)=>{
+  b.position.add(b.userData.vel);
+  bots.forEach((bot,bi)=>{
+   if(b.position.distanceTo(bot.position)<1){
+    bot.userData.life-=10;
+    scene.remove(b);
+    bullets.splice(i,1);
+    if(bot.userData.life<=0){
+     scene.remove(bot);
+     bots.splice(bi,1);
+    }
+   }
+  });
+ });
+
+ bots.forEach(bot=>{
+  if(bot.position.distanceTo(player.position)<12){
+   bot.lookAt(player.position);
+   bot.translateZ(.04);
+  }
+ });
+
+ camera.position.set(
+  player.position.x,
+  player.position.y+6,
+  player.position.z+10
+ );
+ camera.lookAt(player.position);
+
+ renderer.render(scene,camera);
+}
+animate();
+
+addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
